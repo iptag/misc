@@ -1,0 +1,104 @@
+name: Sync Shadowrocket Rules
+
+on:
+  schedule:
+    # 每天UTC时间0点执行 (北京时间上午8点)
+    - cron: '0 1 * * *'
+  workflow_dispatch: # 允许在Actions页面手动触发
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Sync and update conf files
+        run: |
+          # 1. 定义要添加的各部分纯内容
+          cat > rule_content.txt << 'EOF'
+          AND,((DOMAIN-SUFFIX,googlevideo.com), (PROTOCOL,UDP)),REJECT
+          AND,((DOMAIN,youtubei.googleapis.com), (PROTOCOL,UDP)),REJECT
+          EOF
+
+          cat > url_rewrite_content.txt << 'EOF'
+          (^https?:\/\/[\w-]+\.googlevideo\.com\/(?!dclk_video_ads).+?)&ctier=L(&.+?),ctier,(.+) $1$2$3 302
+          ^https?:\/\/[\w-]+\.googlevideo\.com\/(?!(dclk_video_ads|videoplayback\?)).+&oad _ reject-200
+          ^https?:\/\/(www|s)\.youtube\.com\/api\/stats\/ads _ reject-200
+          ^https?:\/\/(www|s)\.youtube\.com\/(pagead|ptracking) _ reject-200
+          ^https?:\/\/s\.youtube\.com\/api\/stats\/qoe\?adcontext _ reject-200
+          EOF
+
+          cat > script_content.txt << 'EOF'
+          youtube.response = type=http-response,pattern=^https:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/(browse|next|player|search|reel\/reel_watch_sequence|guide|account\/get_setting|get_watch),requires-body=1,max-size=-1,binary-body-mode=1,engine=jsc,script-path=https://raw.githubusercontent.com/Maasea/sgmodule/master/Script/Youtube/youtube.response.js,argument="{"lyricLang":"off","captionLang":"off","blockUpload":true,"blockImmersive":true,"debug":false}"
+          EOF
+          
+          # 2. 定义一个通用的函数，用于将内容添加到已存在的区域，或创建新区域
+          add_section() {
+              local section_header="$1"
+              local content_file="$2"
+              local target_file="$3"
+              local escaped_header=$(echo "$section_header" | sed 's/\[/\\[/g; s/\]/\\]/g')
+
+              # 检查区域标题是否已存在
+              if grep -q "^${escaped_header}" "${target_file}"; then
+                  # 如果存在，则将内容插入到该标题行的正下方
+                  sed -i "/^${escaped_header}/r ${content_file}" "${target_file}"
+              else
+                  # 如果不存在，则在文件末尾创建该区域
+                  echo "" >> "${target_file}"
+                  echo "${section_header}" >> "${target_file}"
+                  cat "${content_file}" >> "${target_file}"
+              fi
+          }
+
+          # 3. 定义文件列表
+          declare -A files=(
+              ["sr_top500_banlist_ad.conf"]="https://johnshall.github.io/Shadowrocket-ADBlock-Rules-Forever/sr_top500_banlist_ad.conf"
+              ["sr_cnip_ad.conf"]="https://johnshall.github.io/Shadowrocket-ADBlock-Rules-Forever/sr_cnip_ad.conf"
+          )
+
+          # 4. 循环处理每个文件
+          for file in "${!files[@]}"; do
+              url=${files[$file]}
+              echo "Processing $file from $url"
+
+              # 下载最新文件
+              curl -sS -L -o "$file" "$url"
+
+              # --- 关键步骤：无条件清理旧的MITM规则 ---
+              echo "Sanitizing old MITM rules from $file..."
+              # 强力删除所有旧的 [MITM] 区域标题
+              sed -i '/^\[MITM\]/d' "$file"
+              # 强力删除所有旧的 hostname 规则行
+              sed -i -E '/^[[:space:]]*hostname[[:space:]]*=/d' "$file"
+              # --- 清理结束 ---
+
+              # 添加或创建 [Rule], [URL Rewrite], [Script] 区域
+              add_section "[Rule]" "rule_content.txt" "$file"
+              add_section "[URL Rewrite]" "url_rewrite_content.txt" "$file"
+              add_section "[Script]" "script_content.txt" "$file"
+
+              # --- 关键步骤：无条件重建新的MITM区域 ---
+              # 合并源文件中的主机名和您需要添加的主机名，并去重
+              # 最终主机名列表: *.google.cn (源), -redirector*.googlevideo.com, *.googlevideo.com, www.youtube.com, s.youtube.com, youtubei.googleapis.com
+              echo "Rebuilding MITM section in $file..."
+              echo "" >> "$file"
+              echo "[MITM]" >> "$file"
+              echo "hostname = *.google.cn, -redirector*.googlevideo.com, *.googlevideo.com, www.youtube.com, s.youtube.com, youtubei.googleapis.com" >> "$file"
+          done
+
+          # 清理临时文件
+          rm *.txt
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add .
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "feat(sync): Update rules for URL Rewrite, Script, and MITM"
+            git push
+          fi
