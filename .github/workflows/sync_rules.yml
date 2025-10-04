@@ -20,9 +20,11 @@ jobs:
           cat > rule_content.txt << 'EOF'
           AND,((DOMAIN-SUFFIX,googlevideo.com), (PROTOCOL,UDP)),REJECT
           AND,((DOMAIN,youtubei.googleapis.com), (PROTOCOL,UDP)),REJECT
+          DOMAIN-SUFFIX,iyes.youku.com,REJECT
+          DOMAIN-SUFFIX,optimus-ads.amap.com,DIRECT
           EOF
 
-          # URL Rewrite 内容 (Bilibili的脚本规则已被移至[Script]部分)
+          # URL Rewrite 内容
           cat > url_rewrite_content.txt << 'EOF'
           (^https?:\/\/[\w-]+\.googlevideo\.com\/(?!dclk_video_ads).+?)&ctier=L(&.+?),ctier,(.+) $1$2$3 302
           ^https?:\/\/[\w-]+\.googlevideo\.com\/(?!(dclk_video_ads|videoplayback\?)).+&oad _ reject-200
@@ -30,19 +32,49 @@ jobs:
           ^https?:\/\/(www|s)\.youtube\.com\/(pagead|ptracking) _ reject-200
           ^https?:\/\/s\.youtube\.com\/api\/stats\/qoe\?adcontext _ reject-200
           ^https?:\/\/app\.bilibili\.com\/x\/v2\/splash\/show url reject-200
+          # > 闲鱼
+          ^https?:\/\/(g-)?acs\.m\.goofish\.com\/gw\/mtop.*splash\.ads - reject
+          ^https?:\/\/(g-)?acs\.m\.goofish\.com\/gw\/mtop.idle.ad.expose - reject
+          # > 高德地图
+          ^https?:\/\/.*\.amap\.com\/ws\/faas\/amap-navigation\/card-service-route-plan\? url reject-dict
+          ^https?:\/\/.*\.amap\.com\/ws\/boss\/order_web\/\w{8}_information url reject-200
+          ^https?:\/\/.*\.amap\.com\/ws\/asa\/ads_attribution url reject
+          ^https?:\/\/.*\.amap\.com\/ws\/shield\/scene\/recommend url reject-dict
+          ^https?:\/\/.*\.amap\.com\/uploadimg\/\w+\.gif url reject-img
+          ^https?:\/\/.*\.amap\.com\/ws\/valueadded\/weather url reject-dict
           EOF
 
-          # Script 内容 (合并了YouTube, Spotify, 和 Bilibili)
+          # Script 内容
           cat > script_content.txt << 'EOF'
           youtube.response = type=http-response,pattern=^https:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/(browse|next|player|search|reel\/reel_watch_sequence|guide|account\/get_setting|get_watch),requires-body=1,max-size=-1,binary-body-mode=1,engine=jsc,script-path=https://raw.githubusercontent.com/Maasea/sgmodule/master/Script/Youtube/youtube.response.js,argument="{"lyricLang":"off","captionLang":"off","blockUpload":true,"blockImmersive":true,"debug":false}"
           spotify-json = type=http-request,pattern=^https:\/\/(spclient\.wg\.spotify\.com|.*-spclient\.spotify\.com(:443)?)\/(artistview\/v1\/artist|album-entity-view\/v2\/album)\/,requires-body=0,script-path=https://raw.githubusercontent.com/app2smile/rules/master/js/spotify-json.js
           spotify-proto = type=http-response,pattern=^https:\/\/(spclient\.wg\.spotify\.com|.*-spclient\.spotify\.com(:443)?)\/(bootstrap\/v1\/bootstrap|user-customization-service\/v1\/customize)$,requires-body=1,binary-body-mode=1,max-size=0,script-path=https://raw.githubusercontent.com/app2smile/rules/master/js/spotify-proto.js,script-update-interval=0
           bilibili_json = type=http-response,pattern=^https?:\/\/app\.bilibili\.com\/x\/(v2\/splash\/list|v2\/account\/myinfo\?|v2\/feed\/index|resource\/show\/tab|v2\/account\/mine|resource\/top\/activity|v2\/search\/square),requires-body=1,max-size=-1,script-path=https://raw.githubusercontent.com/ddgksf2013/Scripts/refs/heads/master/bilibili_json.js
+          # > AMDC处理 (已合并高德地图规则)
+          amdc = type=http-response,pattern=(^http:\/\/[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+){1,4}(:\d+)?\/amdc\/mobileDispatch|^http:\/\/amdc\.m\.taobao\.com),requires-body=1,max-size=0,script-path=https://raw.githubusercontent.com/ddgksf2013/Scripts/refs/heads/master/amdc.js
+          # > 高德地图脚本合并
+          amap_js = type=http-response,pattern=^https?:\/\/.*\.amap\.com\/(ws\/message\/notice\/list|ws\/shield\/frogserver\/aocs\/updatable|ws\/shield\/search\/nearbyrec_smart|ws\/promotion-web\/resource|ws\/faas\/amap-navigation\/main-page|ws\/valueadded\/alimama\/splash_screen|ws\/msgbox\/pull|ws\/shield\/dsp\/profile\/index\/nodefaas|ws\/shield\/search\/new_hotword),requires-body=1,script-path=https://raw.githubusercontent.com/ddgksf2013/Scripts/refs/heads/master/amap.js
           EOF
           
           # Header Rewrite 内容
           cat > header_rewrite_content.txt << 'EOF'
           http-request ^https:\/\/(spclient\.wg\.spotify\.com|.*-spclient\.spotify\.com(:443)?)\/user-customization-service\/v1\/customize$ header-del if-none-match
+          EOF
+          
+          # Body Rewrite 内容
+          cat > body_rewrite_content.txt << 'EOF'
+          # > 闲鱼
+          http-response-jq ^https?:\/\/(g-)?acs\.m\.goofish\.com\/gw\/mtop.taobao.idle.user.strategy.list '.data.strategies = [{}]'
+          http-response-jq ^https?:\/\/(g-)?acs\.m\.goofish\.com\/gw\/mtop.taobao.idlehome.home.circle.list '.data.circleList |= map(select(.bizCode != "saveMoney"))'
+          http-response-jq ^https?:\/\/(g-)?acs\.m\.goofish\.com\/gw\/mtop.taobao.idlehome.home.nextfresh '.data.homeTopList |= [ .[0] ] | .data.sections |= map(select(.data.bizType == "item"))'
+          http-response-jq ^https?:\/\/(g-)?acs\.m\.goofish\.com\/gw\/mtop.taobao.idlemtopsearch.search.shade '.data.singleShadeWords =[{}]'
+          http-response-jq ^https?:\/\/(g-)?acs\.m\.goofish\.com\/gw\/mtop.taobao.idlemtopsearch.item.search.activate '.data.cardList = [{}]'
+          http-response-jq ^https?:\/\/(g-)?acs\.m\.goofish\.com\/gw\/mtop.taobao.idlemtopsearch.search.discover 'del(.data.resultList)'
+          http-response-jq ^https?:\/\/(g-)?acs\.m\.goofish\.com\/gw\/mtop.idle.user.page.my.adapter '.data.ability=[] | .data.container.sections |= map(select(.sectionBizCode | test("head|user|trade")))'
+          http-response-jq ^https?:\/\/(g-)?acs\.m\.goofish\.com\/gw\/mtop.taobao.idle.item.buy.feeds 'del(.data.sections)'
+          http-response-jq ^https?:\/\/(g-)?acs\.m\.goofish\.com\/gw\/mtop.taobao.idle.local.home '.data.sections |= map(select(.data.bizType == "item"))'
+          http-response-jq ^https?:\/\/(g-)?acs\.m\.goofish\.com\/gw\/mtop.taobao.idlemtopsearch.search '.data.resultList |= map(select(.data.item.main.clickParam.args.biz_type == "item"))'
+          http-response-jq ^https?:\/\/(g-)?acs\.m\.goofish\.com\/gw\/mtop.taobao.idle.item.recommend '.data.cardList |= map(select(.cardData.bizType != "mamaAD"))'
           EOF
 
           # 2. 定义一个通用的函数，用于将内容添加到已存在的区域，或创建新区域
@@ -52,12 +84,9 @@ jobs:
               local target_file="$3"
               local escaped_header=$(echo "$section_header" | sed 's/\[/\\[/g; s/\]/\\]/g')
 
-              # 检查区域标题是否已存在
               if grep -q "^${escaped_header}" "${target_file}"; then
-                  # 如果存在，则将内容插入到该标题行的正下方
                   sed -i "/^${escaped_header}/r ${content_file}" "${target_file}"
               else
-                  # 如果不存在，则在文件末尾创建该区域
                   echo "" >> "${target_file}"
                   echo "${section_header}" >> "${target_file}"
                   cat "${content_file}" >> "${target_file}"
@@ -75,32 +104,24 @@ jobs:
               url=${files[$file]}
               echo "Processing $file from $url"
 
-              # 下载最新文件
               curl -sS -L -o "$file" "$url"
 
-              # --- 关键步骤：无条件清理旧的MITM规则 ---
               echo "Sanitizing old MITM rules from $file..."
-              # 强力删除所有旧的 [MITM] 区域标题
               sed -i '/^\[MITM\]/d' "$file"
-              # 强力删除所有旧的 hostname 规则行
               sed -i -E '/^[[:space:]]*hostname[[:space:]]*=/d' "$file"
-              # --- 清理结束 ---
 
-              # 添加或创建 [Rule], [URL Rewrite], [Script], [Header Rewrite] 区域
               add_section "[Rule]" "rule_content.txt" "$file"
               add_section "[URL Rewrite]" "url_rewrite_content.txt" "$file"
               add_section "[Script]" "script_content.txt" "$file"
               add_section "[Header Rewrite]" "header_rewrite_content.txt" "$file"
+              add_section "[Body Rewrite]" "body_rewrite_content.txt" "$file"
 
-              # --- 关键步骤：无条件重建新的MITM区域 ---
-              # 合并所有需要的主机名
               echo "Rebuilding MITM section in $file..."
               echo "" >> "$file"
               echo "[MITM]" >> "$file"
-              echo "hostname = *.google.cn, -redirector*.googlevideo.com, *.googlevideo.com, www.youtube.com, s.youtube.com, youtubei.googleapis.com, spclient.wg.spotify.com, *spclient.spotify.com, app.bilibili.com" >> "$file"
+              echo "hostname = *.google.cn, -redirector*.googlevideo.com, *.googlevideo.com, www.youtube.com, s.youtube.com, youtubei.googleapis.com, spclient.wg.spotify.com, *spclient.spotify.com, app.bilibili.com, acs.m.goofish.com, g-acs.m.goofish.com, m5.amap.com, m5-zb.amap.com, center.amap.com" >> "$file"
           done
 
-          # 清理临时文件
           rm *.txt
 
       - name: Commit and push changes
@@ -111,6 +132,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "feat(sync): Update rules for URL Rewrite, Script, and MITM"
+            git commit -m "feat(sync): Update rules for Amap, Goofish, Bilibili, etc."
             git push
           fi
