@@ -20,7 +20,8 @@ jobs:
           cat > rule_content.txt << 'EOF'
           AND,((DOMAIN-SUFFIX,googlevideo.com), (PROTOCOL,UDP)),REJECT
           AND,((DOMAIN,youtubei.googleapis.com), (PROTOCOL,UDP)),REJECT
-          DOMAIN,ad.12306.cn,DIRECT
+          DOMAIN, ad.12306.cn, DIRECT
+          DOMAIN-SUFFIX, shenshiads.com, REJECT
           DOMAIN-SUFFIX,iyes.youku.com,REJECT
           DOMAIN-SUFFIX,optimus-ads.amap.com,DIRECT
           EOF
