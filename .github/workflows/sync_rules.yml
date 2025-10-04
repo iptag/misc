@@ -2,7 +2,7 @@ name: Sync Shadowrocket Rules
 
 on:
   schedule:
-    # 每天UTC时间0点执行 (北京时间上午8点)
+    # 每天UTC时间1点执行 (北京时间上午9点)
     - cron: '0 1 * * *'
   workflow_dispatch: # 允许在Actions页面手动触发
 
@@ -16,11 +16,13 @@ jobs:
       - name: Sync and update conf files
         run: |
           # 1. 定义要添加的各部分纯内容
+          # Rule 内容
           cat > rule_content.txt << 'EOF'
           AND,((DOMAIN-SUFFIX,googlevideo.com), (PROTOCOL,UDP)),REJECT
           AND,((DOMAIN,youtubei.googleapis.com), (PROTOCOL,UDP)),REJECT
           EOF
 
+          # URL Rewrite 内容
           cat > url_rewrite_content.txt << 'EOF'
           (^https?:\/\/[\w-]+\.googlevideo\.com\/(?!dclk_video_ads).+?)&ctier=L(&.+?),ctier,(.+) $1$2$3 302
           ^https?:\/\/[\w-]+\.googlevideo\.com\/(?!(dclk_video_ads|videoplayback\?)).+&oad _ reject-200
@@ -29,10 +31,18 @@ jobs:
           ^https?:\/\/s\.youtube\.com\/api\/stats\/qoe\?adcontext _ reject-200
           EOF
 
+          # Script 内容 (合并了YouTube和Spotify)
           cat > script_content.txt << 'EOF'
           youtube.response = type=http-response,pattern=^https:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/(browse|next|player|search|reel\/reel_watch_sequence|guide|account\/get_setting|get_watch),requires-body=1,max-size=-1,binary-body-mode=1,engine=jsc,script-path=https://raw.githubusercontent.com/Maasea/sgmodule/master/Script/Youtube/youtube.response.js,argument="{"lyricLang":"off","captionLang":"off","blockUpload":true,"blockImmersive":true,"debug":false}"
+          spotify-json = type=http-request,pattern=^https:\/\/(spclient\.wg\.spotify\.com|.*-spclient\.spotify\.com(:443)?)\/(artistview\/v1\/artist|album-entity-view\/v2\/album)\/,requires-body=0,script-path=https://raw.githubusercontent.com/app2smile/rules/master/js/spotify-json.js
+          spotify-proto = type=http-response,pattern=^https:\/\/(spclient\.wg\.spotify\.com|.*-spclient\.spotify\.com(:443)?)\/(bootstrap\/v1\/bootstrap|user-customization-service\/v1\/customize)$,requires-body=1,binary-body-mode=1,max-size=0,script-path=https://raw.githubusercontent.com/app2smile/rules/master/js/spotify-proto.js,script-update-interval=0
           EOF
           
+          # Header Rewrite 内容 (新增)
+          cat > header_rewrite_content.txt << 'EOF'
+          http-request ^https:\/\/(spclient\.wg\.spotify\.com|.*-spclient\.spotify\.com(:443)?)\/user-customization-service\/v1\/customize$ header-del if-none-match
+          EOF
+
           # 2. 定义一个通用的函数，用于将内容添加到已存在的区域，或创建新区域
           add_section() {
               local section_header="$1"
@@ -74,18 +84,18 @@ jobs:
               sed -i -E '/^[[:space:]]*hostname[[:space:]]*=/d' "$file"
               # --- 清理结束 ---
 
-              # 添加或创建 [Rule], [URL Rewrite], [Script] 区域
+              # 添加或创建 [Rule], [URL Rewrite], [Script], [Header Rewrite] 区域
               add_section "[Rule]" "rule_content.txt" "$file"
               add_section "[URL Rewrite]" "url_rewrite_content.txt" "$file"
               add_section "[Script]" "script_content.txt" "$file"
+              add_section "[Header Rewrite]" "header_rewrite_content.txt" "$file"
 
               # --- 关键步骤：无条件重建新的MITM区域 ---
-              # 合并源文件中的主机名和您需要添加的主机名，并去重
-              # 最终主机名列表: *.google.cn (源), -redirector*.googlevideo.com, *.googlevideo.com, www.youtube.com, s.youtube.com, youtubei.googleapis.com
+              # 合并源文件中的主机名和您需要添加的主机名
               echo "Rebuilding MITM section in $file..."
               echo "" >> "$file"
               echo "[MITM]" >> "$file"
-              echo "hostname = *.google.cn, -redirector*.googlevideo.com, *.googlevideo.com, www.youtube.com, s.youtube.com, youtubei.googleapis.com" >> "$file"
+              echo "hostname = *.google.cn, -redirector*.googlevideo.com, *.googlevideo.com, www.youtube.com, s.youtube.com, youtubei.googleapis.com, spclient.wg.spotify.com, *spclient.spotify.com" >> "$file"
           done
 
           # 清理临时文件
