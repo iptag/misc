@@ -1,5 +1,6 @@
 HOST-SUFFIX,push.apple.com,Apple
 HOST-SUFFIX,akadns.net,Apple
+HOST-SUFFIX,akamaiedge.net,Apple
 HOST-KEYWORD,apple.com.edgekey.net,Apple
 
 IP-CIDR,17.249.0.0/16,Apple
