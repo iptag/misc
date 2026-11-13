@@ -4,6 +4,24 @@ HOST-SUFFIX,akadns.net,Apple
 HOST-SUFFIX,akamaiedge.net,Apple
 HOST-KEYWORD,apple.com.edgekey.net,Apple
 
+HOST-SUFFIX,issuer.apple.com,Apple
+HOST,ropes.apple.com,Apple
+HOST,mask.icloud.com,Apple
+HOST,mask-h2.icloud.com,Apple
+HOST,mask-api.icloud.com,Apple
+HOST,mask.apple-dns.net,Apple
+HOST,mask-api.fe.apple-dns.net,Apple
+HOST,gspe1-ssl.ls.apple.com,Apple
+HOST,apple-relay.apple.com,Apple
+HOST-SUFFIX,apple-relay.cloudflare.com,Apple
+HOST-SUFFIX,apple-relay.fastly-edge.com,Apple
+HOST-SUFFIX,cp4.cloudflare.com,Apple
+HOST-SUFFIX,guzzoni.apple.com,Apple
+HOST-SUFFIX,smoot.apple.com,Apple
+HOST-SUFFIX,chatgpt.com,Apple
+HOST-SUFFIX,openai.com,Apple
+HOST-SUFFIX,oaistatic.com,Apple
+
 IP-CIDR,17.249.0.0/16,Apple
 IP-CIDR,17.252.0.0/16,Apple
 IP-CIDR,17.57.144.0/22,Apple
